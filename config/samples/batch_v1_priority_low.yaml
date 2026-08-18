@@ -1,0 +1,7 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: low-priority        # 名字
+value: 10000               # 这个名字对应的优先级数值
+preemptionPolicy: Never  # 这个档位的 pod 准不准踢别人
+globalDefault: false

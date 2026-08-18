@@ -1,0 +1,56 @@
+# 里程碑 1 验收第二条：TrainJob 在真卡上跑起来。
+#
+# 期望：Pod Running，kubectl logs 里 cuda_available=True、device_count=1，
+#      同时宿主机 nvidia-smi 能看到这个进程占着显存。
+#
+# 刻意不带 schedulerName 和 priorityClassName：M1 用 default scheduler，
+# 把变量降到最少。Pod Pending 时才能确定是 GPU 的问题，不是没人调度。
+apiVersion: batch.example.com/v1
+kind: TrainJob
+metadata:
+  name: job-1gpu
+  namespace: default
+spec:
+  queueName: team-gpu
+  worldSize: 1
+  retryLimit: 0
+  image: aiinfra-ddp:cu128
+  masterPort: 29500
+  command:
+    - python
+    - -c
+    - |
+      import os, time, torch
+      print(f"[probe] torch={torch.__version__}", flush=True)
+      # device plugin 的 Allocate() 靠这个变量告诉 runtime 注入哪张卡。
+      # 这里应该是具体的 GPU-<uuid>；如果是 all，说明卡是 runtime 白送的，资源账本是假的。
+      print(f"[probe] NVIDIA_VISIBLE_DEVICES={os.environ.get('NVIDIA_VISIBLE_DEVICES')}", flush=True)
+      # 预期是 None。不是 None 就说明有人设了它，要先查是谁。
+      print(f"[probe] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}", flush=True)
+      print(f"[probe] cuda_available={torch.cuda.is_available()}", flush=True)
+      if not torch.cuda.is_available():
+          raise SystemExit("[probe] FAIL: CUDA unavailable")
+      n = torch.cuda.device_count()
+      # 这个数字必须等于申请的卡数。多了是泄漏，少了是分配没生效。
+      print(f"[probe] device_count={n}", flush=True)
+      for i in range(n):
+          p = torch.cuda.get_device_properties(i)
+          print(f"[probe] device[{i}] {p.name} {p.total_memory/1024**3:.1f}GiB", flush=True)
+      # 占一块显存，宿主机 nvidia-smi 才看得到这个进程
+      buf = torch.empty(512*1024*1024//4, dtype=torch.float32, device="cuda:0").fill_(1.0)
+      print(f"[probe] allocated 512MiB reserved={torch.cuda.memory_reserved(0)/1024**2:.0f}MiB", flush=True)
+      t0 = time.time()
+      while time.time() - t0 < 600:
+          buf.mul_(1.0001)
+          torch.cuda.synchronize()   # 等 GPU 真的算完，否则只是往队列里堆任务
+          time.sleep(0.05)
+      print("[probe] done", flush=True)
+  resources:
+    # requests 和 limits 都要写：
+    #   requests —— 你的 queue_controller 遍历它来扣配额
+    #   limits   —— k8s 对 extended resource 要求 requests == limits（不允许超卖），
+    #               只写 requests 会被 API server 拒绝
+    requests:
+      nvidia.com/gpu: "1"
+    limits:
+      nvidia.com/gpu: "1"

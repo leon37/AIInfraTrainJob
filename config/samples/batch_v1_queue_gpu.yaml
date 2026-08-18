@@ -1,0 +1,13 @@
+apiVersion: batch.example.com/v1
+kind: Queue
+metadata:
+  name: team-gpu
+  namespace: default
+spec:
+  # 对应 QueueSpec.ResourceQuota，是个 ResourceList(map)
+  #
+  # 故意设成 4（节点只有 1 张卡）。里程碑 1 要验的是【调度器】认不认识 GPU，
+  # 配额必须放宽到不成为瓶颈——否则 2 卡那个作业会被 queue_controller 先拦在
+  # Queued 状态，Pod 根本不会被创建，就看不到 Insufficient nvidia.com/gpu 了。
+  resourceQuota:
+    nvidia.com/gpu: "4"

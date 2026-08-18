@@ -1,0 +1,8 @@
+apiVersion: batch.example.com/v1   # group/version
+kind: Queue
+metadata:
+  name: team-a
+  namespace: default
+spec:
+  resourceQuota:        # 对应 QueueSpec.ResourceQuota,是个 ResourceList(map)
+    cpu: "50"            # 整个队列只有 2 核额度

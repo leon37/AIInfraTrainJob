@@ -1,0 +1,7 @@
+apiVersion: batch.example.com/v1
+kind: PodGroup
+metadata:
+  labels:
+    app.kubernetes.io/name: aiinfratrainjob
+    app.kubernetes.io/managed-by: kustomize
+  name: podgroup-sample

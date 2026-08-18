@@ -1,0 +1,89 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: podgroups.batch.example.com
+spec:
+  group: batch.example.com
+  names:
+    kind: PodGroup
+    listKind: PodGroupList
+    plural: podgroups
+    singular: podgroup
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: PodGroup is the Schema for the podgroups API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of PodGroup
+            properties:
+              minMember:
+                format: int32
+                type: integer
+              scheduleMaxLimit:
+                format: int32
+                type: integer
+            required:
+            - minMember
+            - scheduleMaxLimit
+            type: object
+          status:
+            description: status defines the observed state of PodGroup
+            properties:
+              failed:
+                type: boolean
+              preemptedBy:
+                type: string
+              preemptionDetail:
+                items:
+                  properties:
+                    count:
+                      format: int32
+                      type: integer
+                    nodeName:
+                      type: string
+                  type: object
+                type: array
+              reason:
+                type: string
+              round:
+                description: |-
+                  conditions represent the current state of the PodGroup resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
+
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+                format: int32
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

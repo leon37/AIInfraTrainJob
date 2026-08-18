@@ -1,0 +1,51 @@
+# 里程碑 1 验收第三条：申请超过节点拥有的卡数。
+#
+# 期望：Pod 卡在 Pending，kubectl describe pod 的事件里出现
+#      "0/1 nodes are available: 1 Insufficient nvidia.com/gpu"
+#
+# 这是 M1 最值钱的证据：证明 GPU 是走【调度器资源账本】的可调度资源，
+# 而不是"容器碰巧能访问显卡"。kind + CPU 的环境永远做不出这个区分。
+#
+# 命令刻意保持和 1gpu 一致 —— 反正它根本跑不起来，容器不会被创建。
+apiVersion: batch.example.com/v1
+kind: TrainJob
+metadata:
+  name: job-2gpu
+  namespace: default
+spec:
+  queueName: team-gpu
+  worldSize: 1
+  retryLimit: 0
+  image: aiinfra-ddp:cu128
+  masterPort: 29500
+  command:
+    - python
+    - -c
+    - |
+      import os, time, torch
+      print(f"[probe] torch={torch.__version__}", flush=True)
+      print(f"[probe] NVIDIA_VISIBLE_DEVICES={os.environ.get('NVIDIA_VISIBLE_DEVICES')}", flush=True)
+      print(f"[probe] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}", flush=True)
+      print(f"[probe] cuda_available={torch.cuda.is_available()}", flush=True)
+      if not torch.cuda.is_available():
+          raise SystemExit("[probe] FAIL: CUDA unavailable")
+      n = torch.cuda.device_count()
+      print(f"[probe] device_count={n}", flush=True)
+      for i in range(n):
+          p = torch.cuda.get_device_properties(i)
+          print(f"[probe] device[{i}] {p.name} {p.total_memory/1024**3:.1f}GiB", flush=True)
+      buf = torch.empty(512*1024*1024//4, dtype=torch.float32, device="cuda:0").fill_(1.0)
+      print(f"[probe] allocated 512MiB reserved={torch.cuda.memory_reserved(0)/1024**2:.0f}MiB", flush=True)
+      t0 = time.time()
+      while time.time() - t0 < 600:
+          buf.mul_(1.0001)
+          torch.cuda.synchronize()
+          time.sleep(0.05)
+      print("[probe] done", flush=True)
+  resources:
+    # 节点只有 1 张卡，这里要 2 张。
+    # Queue 配额设的是 4，所以配额这一关会放行 —— 必须让它走到调度器手里才有意义。
+    requests:
+      nvidia.com/gpu: "2"
+    limits:
+      nvidia.com/gpu: "2"
