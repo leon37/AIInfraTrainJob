@@ -38,6 +38,13 @@ type TrainJobSpec struct {
 	Image             string                  `json:"image"`
 	Command           []string                `json:"command,omitempty"`
 	Args              []string                `json:"args,omitempty"`
+	// Resources 是【单个 worker】的资源需求，不是整个作业的总量。
+	//   作业总量 = Resources × WorldSize
+	// 配额扣减见 queue_controller.go 里的 quantityNeed.Mul(WorldSize)；
+	// 而 trainjob_controller.go 创建 Pod 时是原样透传单份。
+	// 语义与 Kubeflow PyTorchJob、Volcano Job 一致（都在 replica 模板里写单份）。
+	//
+	// 例：worldSize=2 + nvidia.com/gpu=1 表示【每个 worker 一张卡，整个作业两张】。
 	Resources         v1.ResourceRequirements `json:"resources,omitempty"`
 	RetryLimit        int32                   `json:"retryLimit"`
 	SchedulerName     string                  `json:"schedulerName,omitempty"`

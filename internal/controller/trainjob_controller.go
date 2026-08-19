@@ -47,7 +47,9 @@ type TrainJobReconciler struct {
 // +kubebuilder:rbac:groups=batch.example.com,resources=trainjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch.example.com,resources=trainjobs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch.example.com,resources=trainjobs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=batch.example.com,resources=podgroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

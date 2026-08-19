@@ -8,6 +8,7 @@ rules:
   - ""
   resources:
   - pods
+  - services
   verbs:
   - create
   - delete
@@ -17,6 +18,7 @@ rules:
 - apiGroups:
   - batch.example.com
   resources:
+  - podgroups
   - queues
   - trainjobs
   verbs:
