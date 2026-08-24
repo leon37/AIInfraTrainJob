@@ -1,0 +1,24 @@
+apiVersion: batch.example.com/v1
+kind: TrainJob
+metadata:
+  name: m2-gang-block
+  namespace: default
+spec:
+  queueName: team-gpu
+  worldSize: 2
+  retryLimit: 0
+  schedulerName: my-custom-scheduler
+  priorityClassName: high-priority
+  image: aiinfra-ddp:cu128
+  masterPort: 29500
+  scheduleMaxCount: 10
+  command:
+    - sh
+    - -c
+    - |
+      NCCL_DEBUG=INFO python /app/experiments/03_ddp_minimal.py
+  resources:
+    requests:
+      nvidia.com/gpu: "1"
+    limits:
+      nvidia.com/gpu: "1"
