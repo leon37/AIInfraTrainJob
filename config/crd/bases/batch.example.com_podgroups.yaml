@@ -42,12 +42,15 @@ spec:
               minMember:
                 format: int32
                 type: integer
-              scheduleMaxLimit:
+              scheduleTimeoutSeconds:
+                default: 300
+                description: |-
+                  ScheduleTimeoutSeconds 是 gang 从 PodGroup 创建起的最长等待时间，
+                  超过仍未凑齐整组则标记 failed。
                 format: int32
                 type: integer
             required:
             - minMember
-            - scheduleMaxLimit
             type: object
           status:
             description: status defines the observed state of PodGroup

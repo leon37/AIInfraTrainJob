@@ -33,11 +33,11 @@ type TrainJobSpec struct {
 
 	// foo is an example field of TrainJob. Edit trainjob_types.go to remove/update
 	// +optional
-	WorldSize         int32                   `json:"worldSize"`
-	MasterPort        int32                   `json:"masterPort,omitempty"`
-	Image             string                  `json:"image"`
-	Command           []string                `json:"command,omitempty"`
-	Args              []string                `json:"args,omitempty"`
+	WorldSize  int32    `json:"worldSize"`
+	MasterPort int32    `json:"masterPort,omitempty"`
+	Image      string   `json:"image"`
+	Command    []string `json:"command,omitempty"`
+	Args       []string `json:"args,omitempty"`
 	// Resources 是【单个 worker】的资源需求，不是整个作业的总量。
 	//   作业总量 = Resources × WorldSize
 	// 配额扣减见 queue_controller.go 里的 quantityNeed.Mul(WorldSize)；
@@ -51,7 +51,11 @@ type TrainJobSpec struct {
 	CheckpointSpec    *TrainJobCheckpointSpec `json:"checkpointSpec,omitempty"`
 	QueueName         string                  `json:"queueName"`
 	PriorityClassName string                  `json:"priorityClassName,omitempty"`
-	ScheduleMaxCount  int32                   `json:"scheduleMaxCount,omitempty"`
+	// ScheduleTimeoutSeconds 是 gang 从 PodGroup 创建起的最长等待时间，
+	// 超过仍未凑齐整组则标记 failed。
+	// +kubebuilder:default=300
+	// +optional
+	ScheduleTimeoutSeconds int32 `json:"scheduleTimeoutSeconds,omitempty"`
 }
 
 type TrainJobCheckpointSpec struct {

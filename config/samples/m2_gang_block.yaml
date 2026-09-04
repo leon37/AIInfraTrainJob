@@ -11,7 +11,7 @@ spec:
   priorityClassName: high-priority
   image: aiinfra-ddp:cu128
   masterPort: 29500
-  scheduleMaxCount: 10
+  scheduleTimeoutSeconds: 60
   command:
     - sh
     - -c
@@ -19,6 +19,6 @@ spec:
       NCCL_DEBUG=INFO python /app/experiments/03_ddp_minimal.py
   resources:
     requests:
-      nvidia.com/gpu: "1"
+      example.com/gpu: "1"
     limits:
-      nvidia.com/gpu: "1"
+      example.com/gpu: "1"

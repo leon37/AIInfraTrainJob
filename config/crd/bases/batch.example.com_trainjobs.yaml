@@ -73,7 +73,7 @@ spec:
                   而 trainjob_controller.go 创建 Pod 时是原样透传单份。
                   语义与 Kubeflow PyTorchJob、Volcano Job 一致（都在 replica 模板里写单份）。
 
-                  例：worldSize=2 + nvidia.com/gpu=1 表示【每个 worker 一张卡，整个作业两张】。
+                  例：worldSize=2 + example.com/gpu=1 表示【每个 worker 一张卡，整个作业两张】。
                 properties:
                   claims:
                     description: |-
@@ -134,7 +134,11 @@ spec:
               retryLimit:
                 format: int32
                 type: integer
-              scheduleMaxCount:
+              scheduleTimeoutSeconds:
+                default: 300
+                description: |-
+                  ScheduleTimeoutSeconds 是 gang 从 PodGroup 创建起的最长等待时间，
+                  超过仍未凑齐整组则标记 failed。
                 format: int32
                 type: integer
               schedulerName:

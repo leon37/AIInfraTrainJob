@@ -8,7 +8,7 @@ spec:
   worldSize: 2
   retryLimit: 0
   schedulerName: my-custom-scheduler
-  scheduleMaxCount: 2
+  scheduleTimeoutSeconds: 60
   priorityClassName: high-priority
   image: aiinfra-ddp:cu128
   masterPort: 29500
@@ -19,6 +19,6 @@ spec:
       NCCL_DEBUG=INFO python /app/experiments/03_ddp_minimal.py
   resources:
     requests:
-      nvidia.com/gpu: "1"
+      example.com/gpu: "1"
     limits:
-      nvidia.com/gpu: "1"
+      example.com/gpu: "1"

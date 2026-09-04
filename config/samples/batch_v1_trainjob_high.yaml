@@ -11,7 +11,7 @@ spec:
   command: ["sleep", "3600"]   # 让它一直占着资源,方便你观察
   masterPort: 29500
   schedulerName: my-custom-scheduler
-  scheduleMaxCount: 2
+  scheduleTimeoutSeconds: 60
   priorityClassName: high-priority
   resources:
     requests:

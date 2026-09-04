@@ -673,12 +673,13 @@ func buildWorkerPodGroup(trainJob *batchv1.TrainJob) *batchv1.PodGroup {
 			Namespace: trainJob.Namespace,
 		},
 		Spec: batchv1.PodGroupSpec{
-			MinMember:        trainJob.Spec.WorldSize,
-			ScheduleMaxLimit: trainJob.Spec.ScheduleMaxCount,
+			MinMember:              trainJob.Spec.WorldSize,
+			ScheduleTimeoutSeconds: trainJob.Spec.ScheduleTimeoutSeconds,
 		},
 	}
-	if podGroup.Spec.ScheduleMaxLimit <= 0 {
-		podGroup.Spec.ScheduleMaxLimit = 1
+
+	if podGroup.Spec.ScheduleTimeoutSeconds <= 0 {
+		podGroup.Spec.ScheduleTimeoutSeconds = 300
 	}
 
 	return podGroup

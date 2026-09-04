@@ -30,8 +30,12 @@ type PodGroupSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	MinMember        int32 `json:"minMember"`
-	ScheduleMaxLimit int32 `json:"scheduleMaxLimit"`
+	MinMember int32 `json:"minMember"`
+	// ScheduleTimeoutSeconds 是 gang 从 PodGroup 创建起的最长等待时间，
+	// 超过仍未凑齐整组则标记 failed。
+	// +kubebuilder:default=300
+	// +optional
+	ScheduleTimeoutSeconds int32 `json:"scheduleTimeoutSeconds,omitempty"`
 }
 
 // PodGroupStatus defines the observed state of PodGroup.
