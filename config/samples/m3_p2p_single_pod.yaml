@@ -1,0 +1,45 @@
+# M3 第 12 步：一个 Pod 占 2 卡，跑 torchrun --nproc_per_node=2
+#
+# 唯一能补掉 GPU互联与通信.md 第九节那个软肋（"你量过 P2P 到底能到多少吗"）的实验。
+# 一个 Pod 里两个 rank 在【同一个 network namespace】、device_count=2
+#   → NCCL 会走 PCIe P2P，不再退回 NET/Socket
+# 对照：pod-per-worker 的 4.3 GB/s（M2 实测）。预期有明显提升。
+#
+# ⚠️ 这里 worldSize=1 是【TrainJob 层面只起一个 Pod】，Pod 内的两个 rank 由 torchrun 拉起。
+#    别和 m3_crossnode_4.yaml 的 worldSize=4 混淆——那是 4 个 Pod 各 1 卡。
+#
+# ⚠️ env -u 是必须的：控制器会给 Pod 注入 RANK=0 / WORLD_SIZE=1 / LOCAL_RANK=0 /
+#    MASTER_ADDR（ClusterIP Service）/ MASTER_PORT，这些会和 torchrun 自己的
+#    rendezvous 打架。清掉它们，让 torchrun 完全自己做主，走 127.0.0.1。
+#    master_port 用 29501 而不是 29500，避开控制器那个 Service 的端口。
+#
+# 对照组：把 command 里的 torchrun 前面加 NCCL_P2P_DISABLE=1 再跑一次，
+#         两个数一比就知道 P2P 到底值多少。
+apiVersion: batch.example.com/v1
+kind: TrainJob
+metadata:
+  name: m3-p2p-single-pod
+  namespace: default
+spec:
+  queueName: team-gpu
+  worldSize: 1
+  retryLimit: 0
+  schedulerName: my-custom-scheduler
+  scheduleTimeoutSeconds: 120
+  priorityClassName: high-priority
+  image: aiinfra-ddp:cu128
+  masterPort: 29500
+  command:
+    - sh
+    - -c
+    - |
+      PG_TIMEOUT=120 NCCL_DEBUG=INFO \
+      env -u RANK -u WORLD_SIZE -u LOCAL_RANK -u MASTER_ADDR -u MASTER_PORT \
+        torchrun --nnodes=1 --nproc_per_node=2 \
+          --master_addr=127.0.0.1 --master_port=29501 \
+          /app/experiments/06_all_reduce_payload.py --steps 10 --numel 10000000
+  resources:
+    requests:
+      nvidia.com/gpu: "2"
+    limits:
+      nvidia.com/gpu: "2"

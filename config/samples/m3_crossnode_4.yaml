@@ -1,0 +1,37 @@
+# M3 第 9 步：跨节点 NCCL，worldSize=4（两节点 × 2 卡）—— M3 的本体
+#
+# 期望（worldSize=4 的值和 M2 双卡不同，已手算并用 M2 反算校验过）：
+#   x                     四个 rank 各不相同：1 / 2 / 3 / 4
+#   grad_after_backward   四个全部 15.0   （本地梯度 2x² = 2/8/18/32，平均 15）
+#   weight_after_step     四个全部 -0.5   （1.0 - 0.1×15.0）
+#   NCCL 日志             nNodes 4（现在是事实，不再是"以为"）、Init COMPLETE
+#
+# 判据是交叉证据：x 各不相同（确实是 4 个独立 rank）+ grad 完全一致（梯度真的汇聚了）。
+# 单看任一条都能被巧合解释。
+#
+# PG_TIMEOUT=120：建连失败时 2 分钟内暴露，不静默等 NCCL 默认的 10 分钟。
+# 两台双卡 ¥0.92/分钟，一次静默失败白烧 ¥9。
+apiVersion: batch.example.com/v1
+kind: TrainJob
+metadata:
+  name: m3-crossnode-4
+  namespace: default
+spec:
+  queueName: team-gpu
+  worldSize: 4
+  retryLimit: 0
+  schedulerName: my-custom-scheduler
+  scheduleTimeoutSeconds: 120
+  priorityClassName: high-priority
+  image: aiinfra-ddp:cu128
+  masterPort: 29500
+  command:
+    - sh
+    - -c
+    - |
+      PG_TIMEOUT=120 NCCL_DEBUG=INFO python /app/experiments/03_ddp_minimal.py
+  resources:
+    requests:
+      nvidia.com/gpu: "1"
+    limits:
+      nvidia.com/gpu: "1"
