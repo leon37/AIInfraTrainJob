@@ -9,12 +9,10 @@
 # 对照：M2 单节点双卡 algbw ≈ 4.3 GB/s（n=2，系数为 1，两个数恰好相等）。
 #
 # ⚠️ 【故意不写 schedulerName / priorityClassName，走 default scheduler】
-#    第 8 步的单节点基线用的是 m2_nccl_ddp.yaml，那份也是 default scheduler。
-#    如果这里换成 my-custom-scheduler，从第 8 步到第 9 步就【同时变了两个变量】
-#    （单节点→跨节点、default→自定义），失败时不知道该怀疑网络还是调度器，
-#    而这一步本来就是 M3 最可能反复的一步，基线对照的意义会废掉一半。
-#    gang 的跨节点行为：本地 kind 已验过（worldSize=4 两节点各 2 rank），
-#    真 GPU 上由第 10 步（m2_gang_fail.yaml，走自定义调度器）再验一次。
+#    和第 9 步（m3_crossnode_4.yaml）保持一致：这一步测的是【带宽数字】，
+#    调度器换了会多一层不确定性，而带宽和用哪个调度器毫无关系。
+#    提交前确认 4 卡全空闲即可——资源够时 default scheduler 会把 4 个 Pod 都调上去，
+#    不需要 gang 语义兜底。
 apiVersion: batch.example.com/v1
 kind: TrainJob
 metadata:

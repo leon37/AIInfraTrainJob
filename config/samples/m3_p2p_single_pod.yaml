@@ -2,13 +2,21 @@
 #
 # 唯一能补掉 GPU互联与通信.md 第九节那个软肋（"你量过 P2P 到底能到多少吗"）的实验。
 # 一个 Pod 里两个 rank 在【同一个 network namespace】、device_count=2
-#   → NCCL 会走 PCIe P2P，不再退回 NET/Socket
+#   → NCCL 知道它们是同机的，不会再退回 NET/Socket
+#
+# ⚠️ 【但走 P2P 还是走 SHM 是未知的，别预设】：
+#    A10 是 PHB 互联，P2P 到底可不可用【要看第 0 步 nvidia-smi topo -p2p r 的输出】——
+#    那正是 GPU互联与通信.md 里挂了很久的那条"没验证"。
+#      P2P 可用  → NCCL 日志出现 P2P/direct pointer 一类的 transport
+#      P2P 不可用 → 退回 SHM（共享内存），仍然远快于跨 Pod 的 NET/Socket
+#    两种都比 4.3 GB/s 快，但【机制不同，看日志确认走的是哪条】，别写死结论。
+#
 # 对照：pod-per-worker 的 4.3 GB/s（M2 实测）。预期有明显提升。
 #
 # ⚠️ 这里 worldSize=1 是【TrainJob 层面只起一个 Pod】，Pod 内的两个 rank 由 torchrun 拉起。
 #    别和 m3_crossnode_4.yaml 的 worldSize=4 混淆——那是 4 个 Pod 各 1 卡。
 #
-# ⚠️ env -u 是必须的：控制器会给 Pod 注入 RANK=0 / WORLD_SIZE=1 / LOCAL_RANK=0 /
+# ⚠️ env -u 是【防御措施，未实测验证】：控制器会给 Pod 注入 RANK=0 / WORLD_SIZE=1 / LOCAL_RANK=0 /
 #    MASTER_ADDR（ClusterIP Service）/ MASTER_PORT，这些会和 torchrun 自己的
 #    rendezvous 打架。清掉它们，让 torchrun 完全自己做主，走 127.0.0.1。
 #    master_port 用 29501 而不是 29500，避开控制器那个 Service 的端口。
@@ -17,12 +25,9 @@
 #         两个数一比就知道 P2P 到底值多少。
 #
 # ⚠️ 【故意不写 schedulerName / priorityClassName，走 default scheduler】
-#    第 8 步的单节点基线用的是 m2_nccl_ddp.yaml，那份也是 default scheduler。
-#    如果这里换成 my-custom-scheduler，从第 8 步到第 9 步就【同时变了两个变量】
-#    （单节点→跨节点、default→自定义），失败时不知道该怀疑网络还是调度器，
-#    而这一步本来就是 M3 最可能反复的一步，基线对照的意义会废掉一半。
-#    gang 的跨节点行为：本地 kind 已验过（worldSize=4 两节点各 2 rank），
-#    真 GPU 上由第 10 步（m2_gang_fail.yaml，走自定义调度器）再验一次。
+#    这份 worldSize=1，只有一个 Pod，【gang 语义本来就不适用】——
+#    gang 要解决的是"多个 Pod 要么全起要么全不起"，单 Pod 没有这个问题。
+#    走自定义调度器只会多一层排查面，没有任何收益。
 apiVersion: batch.example.com/v1
 kind: TrainJob
 metadata:
