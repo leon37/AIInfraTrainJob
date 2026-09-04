@@ -11,6 +11,14 @@
 #
 # PG_TIMEOUT=120：建连失败时 2 分钟内暴露，不静默等 NCCL 默认的 10 分钟。
 # 两台双卡 ¥0.92/分钟，一次静默失败白烧 ¥9。
+#
+# ⚠️ 【故意不写 schedulerName / priorityClassName，走 default scheduler】
+#    第 8 步的单节点基线用的是 m2_nccl_ddp.yaml，那份也是 default scheduler。
+#    如果这里换成 my-custom-scheduler，从第 8 步到第 9 步就【同时变了两个变量】
+#    （单节点→跨节点、default→自定义），失败时不知道该怀疑网络还是调度器，
+#    而这一步本来就是 M3 最可能反复的一步，基线对照的意义会废掉一半。
+#    gang 的跨节点行为：本地 kind 已验过（worldSize=4 两节点各 2 rank），
+#    真 GPU 上由第 10 步（m2_gang_fail.yaml，走自定义调度器）再验一次。
 apiVersion: batch.example.com/v1
 kind: TrainJob
 metadata:
@@ -20,9 +28,9 @@ spec:
   queueName: team-gpu
   worldSize: 4
   retryLimit: 0
-  schedulerName: my-custom-scheduler
+  # default scheduler 下这个字段没人读（自定义插件不参与），留着是为了将来
+  # 切回 my-custom-scheduler 时不用再加。控制器仍会把它写进 PodGroup。
   scheduleTimeoutSeconds: 120
-  priorityClassName: high-priority
   image: aiinfra-ddp:cu128
   masterPort: 29500
   command:
