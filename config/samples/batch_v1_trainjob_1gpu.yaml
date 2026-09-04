@@ -51,6 +51,6 @@ spec:
     #   limits   —— k8s 对 extended resource 要求 requests == limits（不允许超卖），
     #               只写 requests 会被 API server 拒绝
     requests:
-      example.com/gpu: "1"
+      nvidia.com/gpu: "1"
     limits:
-      example.com/gpu: "1"
+      nvidia.com/gpu: "1"

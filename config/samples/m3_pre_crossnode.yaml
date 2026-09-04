@@ -1,0 +1,37 @@
+# M3 上机前的本地 kind 预验（不需要真 GPU，不计费）
+#
+# ⚠️ 【本目录里唯一使用假扩展资源 example.com/gpu 的文件】
+#    其余 yaml 一律是 nvidia.com/gpu，上机直接能用、不需要 sed。
+#    要在 kind 上跑别的 yaml 时，反向 sed 即可（本地不计费，改错成本低）。
+#
+# 摆成 M3 真机的形态：两个节点 × 2 张（假）卡 = 4 卡，worldSize=4。
+# 一个作业同时验三件事：
+#   1. worldSize=4 全链路 —— Queue 配额正好 4（等于边界）、控制器建 4 个 Pod、minMember=4
+#   2. 跨节点 rendezvous —— 4 个 rank 分在两个节点，靠 ClusterIP Service 连到 rank0
+#   3. gang 不挑节点 —— 上面两条过了就顺带证明了
+#
+# 边界：镜像是 CPU 版，03_ddp_minimal.py 硬编码 backend="gloo"。
+# gloo 只有 rendezvous 这一段，【验不到 NCCL 的第二段（rank0 Pod IP 直连）】，
+# 也验不到真网卡 / VXLAN / 安全组。那些必须上机。
+apiVersion: batch.example.com/v1
+kind: TrainJob
+metadata:
+  name: m3-pre-crossnode
+  namespace: default
+spec:
+  queueName: team-gpu
+  worldSize: 4
+  retryLimit: 0
+  schedulerName: my-custom-scheduler
+  scheduleTimeoutSeconds: 120
+  priorityClassName: high-priority
+  image: aiinfra-ddp-worker:dev      # CPU 版旧镜像，kind 两个 worker 上都有
+  masterPort: 29500
+  command:
+    - python3
+    - /app/experiments/03_ddp_minimal.py
+  resources:
+    requests:
+      example.com/gpu: "1"
+    limits:
+      example.com/gpu: "1"

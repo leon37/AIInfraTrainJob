@@ -16,6 +16,6 @@ spec:
       NCCL_DEBUG=INFO python /app/experiments/03_ddp_minimal.py
   resources:
     requests:
-      example.com/gpu: "1"
+      nvidia.com/gpu: "1"
     limits:
-      example.com/gpu: "1"
+      nvidia.com/gpu: "1"

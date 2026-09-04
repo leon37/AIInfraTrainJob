@@ -1,7 +1,7 @@
 # 里程碑 1 验收第三条：申请超过节点拥有的卡数。
 #
 # 期望：Pod 卡在 Pending，kubectl describe pod 的事件里出现
-#      "0/1 nodes are available: 1 Insufficient example.com/gpu"
+#      "0/1 nodes are available: 1 Insufficient nvidia.com/gpu"
 #
 # 这是 M1 最值钱的证据：证明 GPU 是走【调度器资源账本】的可调度资源，
 # 而不是"容器碰巧能访问显卡"。kind + CPU 的环境永远做不出这个区分。
@@ -46,6 +46,6 @@ spec:
     # 节点只有 1 张卡，这里要 2 张。
     # Queue 配额设的是 4，所以配额这一关会放行 —— 必须让它走到调度器手里才有意义。
     requests:
-      example.com/gpu: "2"
+      nvidia.com/gpu: "2"
     limits:
-      example.com/gpu: "2"
+      nvidia.com/gpu: "2"
