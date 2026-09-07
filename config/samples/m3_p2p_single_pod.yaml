@@ -1,11 +1,11 @@
-# M3 第 12 步：一个 Pod 占 2 卡，跑 torchrun --nproc_per_node=2
+# M3 阶段 B · B6：一个 Pod 占 2 卡，跑 torchrun --nproc_per_node=2
 #
 # 唯一能补掉 GPU互联与通信.md 第九节那个软肋（"你量过 P2P 到底能到多少吗"）的实验。
 # 一个 Pod 里两个 rank 在【同一个 network namespace】、device_count=2
 #   → NCCL 知道它们是同机的，不会再退回 NET/Socket
 #
 # ⚠️ 【但走 P2P 还是走 SHM 是未知的，别预设】：
-#    A10 是 PHB 互联，P2P 到底可不可用【要看第 0 步 nvidia-smi topo -p2p r 的输出】——
+#    A10 是 PHB 互联，P2P 到底可不可用【要看 A1 的 nvidia-smi topo -p2p r 输出】——
 #    那正是 GPU互联与通信.md 里挂了很久的那条"没验证"。
 #      P2P 可用  → NCCL 日志出现 P2P/direct pointer 一类的 transport
 #      P2P 不可用 → 退回 SHM（共享内存），仍然远快于跨 Pod 的 NET/Socket

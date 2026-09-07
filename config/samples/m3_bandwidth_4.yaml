@@ -1,4 +1,4 @@
-# M3 第 11 步：跨节点带宽，worldSize=4
+# M3 阶段 B · B5：跨节点带宽，worldSize=4
 #
 # GPU互联与通信.md 第七节「跨节点带宽」整节空白，这是第一个数。
 #
@@ -9,7 +9,7 @@
 # 对照：M2 单节点双卡 algbw ≈ 4.3 GB/s（n=2，系数为 1，两个数恰好相等）。
 #
 # ⚠️ 【故意不写 schedulerName / priorityClassName，走 default scheduler】
-#    和第 9 步（m3_crossnode_4.yaml）保持一致：这一步测的是【带宽数字】，
+#    和 B3（m3_crossnode_4.yaml）保持一致：这一步测的是【带宽数字】，
 #    调度器换了会多一层不确定性，而带宽和用哪个调度器毫无关系。
 #    提交前确认 4 卡全空闲即可——资源够时 default scheduler 会把 4 个 Pod 都调上去，
 #    不需要 gang 语义兜底。

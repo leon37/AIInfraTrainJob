@@ -1,4 +1,4 @@
-# M3 第 9 步：跨节点 NCCL，worldSize=4（两节点 × 2 卡）—— M3 的本体
+# M3 阶段 B · B3：跨节点 NCCL，worldSize=4（两节点 × 2 卡）—— M3 的本体
 #
 # 期望（worldSize=4 的值和 M2 双卡不同，已手算并用 M2 反算校验过）：
 #   x                     四个 rank 各不相同：1 / 2 / 3 / 4
@@ -13,12 +13,12 @@
 # 两台双卡 ¥0.92/分钟，一次静默失败白烧 ¥9。
 #
 # ⚠️ 【故意不写 schedulerName / priorityClassName，走 default scheduler】
-#    第 8 步的单节点基线用的是 m2_nccl_ddp.yaml，那份也是 default scheduler。
-#    如果这里换成 my-custom-scheduler，从第 8 步到第 9 步就【同时变了两个变量】
+#    A8 的单节点基线用的是 m2_nccl_ddp.yaml，那份也是 default scheduler。
+#    如果这里换成 my-custom-scheduler，从 A8 到 B3 就【同时变了两个变量】
 #    （单节点→跨节点、default→自定义），失败时不知道该怀疑网络还是调度器，
 #    而这一步本来就是 M3 最可能反复的一步，基线对照的意义会废掉一半。
 #    gang 的跨节点行为：本地 kind 已验过（worldSize=4 两节点各 2 rank），
-#    真 GPU 上由第 10 步（m2_gang_fail.yaml，走自定义调度器）再验一次。
+#    真 GPU 上由 B4（m2_gang_fail.yaml，走自定义调度器）再验一次。
 apiVersion: batch.example.com/v1
 kind: TrainJob
 metadata:
