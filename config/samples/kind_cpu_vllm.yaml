@@ -1,0 +1,62 @@
+# kind 专用
+# 和 GPU 版的差异：镜像不同、不申请 GPU、VLLM_CPU_KVCACHE_SPACE 取代 gpu-memory-utilization、显式指定 bfloat16。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai-cpu:v0.29.0-x86_64
+          command: ["vllm", "serve"]
+          args:
+            - /models/Qwen2.5-1.5B-Instruct
+            - --served-model-name
+            - Qwen/Qwen2.5-1.5B-Instruct
+            - --max-model-len
+            - "32768"
+            - --dtype
+            - bfloat16
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: llm-storage
+              mountPath: /models/Qwen2.5-1.5B-Instruct
+              readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
+          env:
+            - name: VLLM_CPU_KVCACHE_SPACE
+              value: "1"
+      volumes:
+        - name: llm-storage
+          hostPath:
+            path: /data/models/Qwen2.5-1.5B-Instruct
+            type: Directory
+        - name: dshm
+          emptyDir:
+            medium: "Memory"
+            sizeLimit: "1Gi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-server
+spec:
+  selector:
+    app.kubernetes.io/name: vllm
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
