@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,14 +49,43 @@ type InferenceJobReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
 func (r *InferenceJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = logf.FromContext(ctx)
+	var inferenceJob batchv1.InferenceJob
+	err := r.Get(ctx, req.NamespacedName, &inferenceJob)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
 
-	// TODO(user): your logic here
+	var needUpdate bool
+
+	switch inferenceJob.Status.Phase {
+	case "":
+		inferenceJob.Status.Phase = batchv1.InferenceJobPhaseQueued
+		needUpdate = true
+	}
+	if needUpdate {
+		err = r.Status().Update(ctx, &inferenceJob)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *InferenceJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &batchv1.InferenceJob{}, queueNameKey, func(rawObj client.Object) []string {
+		job := rawObj.(*batchv1.InferenceJob)
+		if job.Spec.QueueName == "" {
+			return nil
+		}
+		return []string{job.Spec.QueueName}
+	}); err != nil {
+		return err
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&batchv1.InferenceJob{}).
 		Named("inferencejob").

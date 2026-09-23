@@ -23,6 +23,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	v2 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,6 +39,14 @@ import (
 type QueueReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+}
+
+type QueuedJob struct {
+	JobName              string                `json:"jobName,omitempty"`
+	JobType              batchv1.QueuedJobType `json:"jobType,omitempty"`
+	ResourceRequirements v1.ResourceList       `json:"resourceRequirements,omitempty"`
+	PriorityClassName    string                `json:"priorityClassName,omitempty"`
+	CreationTimestamp    metav1.Time           `json:"creationTimestamp,omitempty,omitzero"`
 }
 
 //1. 取到当前这个 Queue 对象(reconcile 的 key 就是它);读出 Spec.quota 和 Status.used。
@@ -71,30 +80,53 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 		return ctrl.Result{}, err
 	}
-	const queueNameKey = "spec.queueName"
-	var curJobs batchv1.TrainJobList
-	err = r.Client.List(ctx, &curJobs, client.MatchingFields{queueNameKey: queue.GetName()}, client.InNamespace(queue.GetNamespace()))
+	var curTrainJobs batchv1.TrainJobList
+	err = r.Client.List(ctx, &curTrainJobs, client.MatchingFields{queueNameKey: queue.GetName()}, client.InNamespace(queue.GetNamespace()))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	jobMap := make(map[string]batchv1.TrainJob)
-	for _, job := range curJobs.Items {
-		jobMap[job.Name] = job
+	trainJobMap := make(map[string]batchv1.TrainJob)
+	for _, job := range curTrainJobs.Items {
+		trainJobMap[job.Name] = job
+	}
+
+	var curInferenceJobs batchv1.InferenceJobList
+	err = r.Client.List(ctx, &curInferenceJobs, client.MatchingFields{queueNameKey: queue.GetName()}, client.InNamespace(queue.GetNamespace()))
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	inferenceJobMap := make(map[string]batchv1.InferenceJob)
+	for _, job := range curInferenceJobs.Items {
+		inferenceJobMap[job.Name] = job
 	}
 
 	var update bool
 	var newUsed []batchv1.QueueUsed
 	for _, usedIns := range queue.Status.Used {
-		job, ok := jobMap[usedIns.JobName]
-		if !ok {
-			update = true
-			continue
+		if usedIns.JobType == batchv1.QueuedJobTypeTrain {
+			job, ok := trainJobMap[usedIns.JobName]
+			if !ok {
+				update = true
+				continue
+			}
+			if job.Status.Phase == batchv1.TrainJobPhaseSucceeded || job.Status.Phase == batchv1.TrainJobPhaseFailed {
+				update = true
+				continue
+			}
+			newUsed = append(newUsed, usedIns)
 		}
-		if job.Status.Phase == batchv1.TrainJobPhaseSucceeded || job.Status.Phase == batchv1.TrainJobPhaseFailed {
-			update = true
-			continue
+		if usedIns.JobType == batchv1.QueuedJobTypeInference {
+			job, ok := inferenceJobMap[usedIns.JobName]
+			if !ok {
+				update = true
+				continue
+			}
+			if job.Status.Phase == batchv1.InferenceJobPhaseFailed {
+				update = true
+				continue
+			}
+			newUsed = append(newUsed, usedIns)
 		}
-		newUsed = append(newUsed, usedIns)
 	}
 	queue.Status.Used = newUsed
 
@@ -107,10 +139,34 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 	}
 
-	var queuedJobs []batchv1.TrainJob
-	for _, job := range jobMap {
+	var queuedJobs []QueuedJob
+	for _, job := range trainJobMap {
 		if job.Status.Phase == batchv1.TrainJobPhaseQueued {
-			queuedJobs = append(queuedJobs, job)
+			totalNeeded := v1.ResourceList{}
+			for resourceName, quantityNeed := range job.Spec.Resources.Requests {
+				needed := quantityNeed.DeepCopy()
+				needed.Mul(int64(job.Spec.WorldSize))
+				totalNeeded[resourceName] = needed
+			}
+
+			queuedJobs = append(queuedJobs, QueuedJob{
+				JobName:              job.Name,
+				JobType:              batchv1.QueuedJobTypeTrain,
+				PriorityClassName:    job.Spec.PriorityClassName,
+				ResourceRequirements: totalNeeded,
+				CreationTimestamp:    job.CreationTimestamp,
+			})
+		}
+	}
+	for _, job := range inferenceJobMap {
+		if job.Status.Phase == batchv1.InferenceJobPhaseQueued {
+			queuedJobs = append(queuedJobs, QueuedJob{
+				JobName:              job.Name,
+				JobType:              batchv1.QueuedJobTypeInference,
+				PriorityClassName:    job.Spec.PriorityClassName,
+				ResourceRequirements: job.Spec.Resources.Requests,
+				CreationTimestamp:    job.CreationTimestamp,
+			})
 		}
 	}
 
@@ -126,18 +182,17 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 
 		sort.Slice(queuedJobs, func(i, j int) bool {
-			return priorityClassMap[queuedJobs[i].Spec.PriorityClassName] > priorityClassMap[queuedJobs[j].Spec.PriorityClassName]
+			if priorityClassMap[queuedJobs[i].PriorityClassName] == priorityClassMap[queuedJobs[j].PriorityClassName] {
+				return queuedJobs[i].CreationTimestamp.Before(&queuedJobs[j].CreationTimestamp)
+			}
+			return priorityClassMap[queuedJobs[i].PriorityClassName] > priorityClassMap[queuedJobs[j].PriorityClassName]
 		})
 
 		curJob := queuedJobs[0]
 		resourcesNeeded := make(v1.ResourceList)
 		var curValid = true
-		for resourceName, quantityNeed := range curJob.Spec.Resources.Requests {
+		for resourceName, quantityNeed := range curJob.ResourceRequirements {
 			tmp := remaining[resourceName].DeepCopy()
-			if !quantityNeed.Mul(int64(curJob.Spec.WorldSize)) {
-				curValid = false
-				break
-			}
 			if tmp.Cmp(quantityNeed) < 0 {
 				curValid = false
 				break
@@ -148,14 +203,15 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		if curValid {
 			needAppend := true
 			for _, used := range queue.Status.Used {
-				if used.JobName == curJob.Name {
+				if used.JobName == curJob.JobName && used.JobType == curJob.JobType {
 					needAppend = false
 					break
 				}
 			}
 			if needAppend {
 				queue.Status.Used = append(queue.Status.Used, batchv1.QueueUsed{
-					JobName:      curJob.Name,
+					JobName:      curJob.JobName,
+					JobType:      curJob.JobType,
 					ResourceUsed: resourcesNeeded,
 				})
 				update = true
@@ -179,9 +235,22 @@ func (r *QueueReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			if !ok {
 				return []reconcile.Request{}
 			}
-			//if !slices.Contains([]batchv1.TrainJobPhase{batchv1.TrainJobPhaseQueued, batchv1.TrainJobPhaseSucceeded, batchv1.TrainJobPhaseFailed}, job.Status.Phase) {
-			//	return []reconcile.Request{}
-			//}
+			if job.Spec.QueueName == "" {
+				return []reconcile.Request{}
+			}
+
+			return []reconcile.Request{{
+				NamespacedName: types.NamespacedName{
+					Namespace: object.GetNamespace(),
+					Name:      job.Spec.QueueName,
+				},
+			}}
+		})).
+		Watches(&batchv1.InferenceJob{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
+			job, ok := object.(*batchv1.InferenceJob)
+			if !ok {
+				return []reconcile.Request{}
+			}
 			if job.Spec.QueueName == "" {
 				return []reconcile.Request{}
 			}

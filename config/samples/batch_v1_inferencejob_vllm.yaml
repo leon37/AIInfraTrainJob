@@ -4,7 +4,7 @@ metadata:
   name: inference-vllm
   namespace: default
 spec:
-  queueName: team-a
+  queueName: team-gpu
   schedulerName: my-custom-scheduler
   priorityClassName: high-priority
   maxRestarts: 1

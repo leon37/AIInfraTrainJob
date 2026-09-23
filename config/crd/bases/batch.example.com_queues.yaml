@@ -57,6 +57,8 @@ spec:
                   properties:
                     jobName:
                       type: string
+                    jobType:
+                      type: string
                     resourceUsed:
                       additionalProperties:
                         anyOf:

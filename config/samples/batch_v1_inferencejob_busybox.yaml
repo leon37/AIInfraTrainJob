@@ -4,7 +4,7 @@ metadata:
   name: inference-busybox
   namespace: default
 spec:
-  queueName: team-a # 配额/requeue
+  queueName: team-gpu # 配额/requeue
   schedulerName: my-custom-scheduler # 抢占
   priorityClassName: high-priority # 抢占
   maxRestarts: 1

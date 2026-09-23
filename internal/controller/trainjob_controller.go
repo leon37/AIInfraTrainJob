@@ -90,7 +90,7 @@ func (r *TrainJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 		for _, used := range queue.Status.Used {
-			if used.JobName == trainJob.GetName() {
+			if used.JobName == trainJob.GetName() && used.JobType == batchv1.QueuedJobTypeTrain {
 				trainJob.Status.Phase = batchv1.TrainJobPhaseStarting
 				needUpdate = true
 				break
@@ -169,8 +169,6 @@ func (r *TrainJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrainJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	const queueNameKey = "spec.queueName"
-	const preemptedByKey = "status.preemptedBy"
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &batchv1.TrainJob{}, queueNameKey, func(rawObj client.Object) []string {
 		job := rawObj.(*batchv1.TrainJob)
 		if job.Spec.QueueName == "" {

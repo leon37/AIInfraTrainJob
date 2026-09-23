@@ -36,6 +36,7 @@ type QueueStatus struct {
 
 type QueueUsed struct {
 	JobName      string          `json:"jobName,omitempty"`
+	JobType      QueuedJobType   `json:"jobType,omitempty"`
 	ResourceUsed v2.ResourceList `json:"resourceUsed,omitempty"`
 }
 
@@ -71,3 +72,10 @@ type QueueList struct {
 func init() {
 	SchemeBuilder.Register(&Queue{}, &QueueList{})
 }
+
+type QueuedJobType string
+
+const (
+	QueuedJobTypeTrain     QueuedJobType = "Train"
+	QueuedJobTypeInference QueuedJobType = "Inference"
+)
