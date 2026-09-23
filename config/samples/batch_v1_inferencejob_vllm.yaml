@@ -1,0 +1,41 @@
+apiVersion: batch.example.com/v1
+kind: InferenceJob
+metadata:
+  name: inference-vllm
+  namespace: default
+spec:
+  queueName: team-a
+  schedulerName: my-custom-scheduler
+  priorityClassName: high-priority
+  maxRestarts: 1
+  image: vllm/vllm-openai-cpu:v0.29.0-x86_64
+  command: [ "vllm", "serve" ]
+  args:
+    - /models/Qwen2.5-1.5B-Instruct
+    - --served-model-name
+    - Qwen/Qwen2.5-1.5B-Instruct
+    - --max-model-len
+    - "32768"
+    - --dtype
+    - bfloat16
+  env:
+    - name: VLLM_CPU_KVCACHE_SPACE
+      value: "1"
+  volumeMounts:
+    - name: llm-storage
+      mountPath: /models/Qwen2.5-1.5B-Instruct
+      readOnly: true
+  volumes:
+    - name: llm-storage
+      hostPath:
+        path: /data/models/Qwen2.5-1.5B-Instruct
+        type: Directory
+  resources:
+    requests:
+      example.com/gpu: "1"
+    limits:
+      example.com/gpu: "1"
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000

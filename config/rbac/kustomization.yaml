@@ -22,6 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the aiinfratrainjob itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- inferencejob_admin_role.yaml
+- inferencejob_editor_role.yaml
+- inferencejob_viewer_role.yaml
 - podgroup_admin_role.yaml
 - podgroup_editor_role.yaml
 - podgroup_viewer_role.yaml

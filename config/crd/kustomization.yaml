@@ -5,6 +5,7 @@ resources:
 - bases/batch.example.com_trainjobs.yaml
 - bases/batch.example.com_queues.yaml
 - bases/batch.example.com_podgroups.yaml
+- bases/batch.example.com_inferencejobs.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

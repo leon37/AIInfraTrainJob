@@ -3,4 +3,5 @@ resources:
 - batch_v1_trainjob_high.yaml
 - batch_v1_queue.yaml
 - batch_v1_podgroup.yaml
+- batch_v1_inferencejob_busybox.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
