@@ -38,6 +38,7 @@ type InferenceJobSpec struct {
 	// 重启由 kubelet 按 Pod 的 restartPolicy 执行，Pod 对象和它占的卡都不动；
 	// 控制器只读 Pod 的重启计数，超过上限进入 Failing，确认 Pod 删除后才置为 Failed。
 	// 注意和 TrainJob.Spec.RetryLimit 区分：那个数的是"删掉整批 Pod、换新 attempt 重建"的次数。
+	// +kubebuilder:validation:Minimum=0
 	MaxRestarts int32    `json:"maxRestarts"`
 	Command     []string `json:"command,omitempty"`
 	Args        []string `json:"args,omitempty"`
@@ -52,9 +53,20 @@ type InferenceJobSpec struct {
 	// 需要自定义大小（例如 TP=2 要加大 sizeLimit）时，在这里显式挂 /dev/shm，控制器就不再补。
 	Volumes []v1.Volume `json:"volumes,omitempty"`
 	// VolumeMounts 与 Volumes 配对使用，/dev/shm 的补齐规则见 Volumes。
-	VolumeMounts   []v1.VolumeMount `json:"volumeMounts,omitempty"`
-	Env            []v1.EnvVar      `json:"env,omitempty"`
-	ReadinessProbe *v1.Probe        `json:"readinessProbe,omitempty"`
+	VolumeMounts []v1.VolumeMount `json:"volumeMounts,omitempty"`
+	Env          []v1.EnvVar      `json:"env,omitempty"`
+	// ReadinessProbe 原样透传到容器，决定 Pod 的 Ready，进而决定 phase 是否为 Running。
+	// 不配时容器一启动 Ready 就为 true，Running 只表示"进程起来了"；
+	// 配了（vLLM 应配 /health）则表示"服务能应答"。失败只会让 Pod 未就绪，不会重启容器。
+	ReadinessProbe *v1.Probe `json:"readinessProbe,omitempty"`
+	// LivenessProbe 原样透传到容器。连续失败达到阈值时 kubelet 会【原地重启容器】，
+	// 这次重启同样计入 MaxRestarts —— 也就是"服务卡死"会被当成一次崩溃处理。
+	// 慢启动的服务要配合 StartupProbe，否则加载期间就会被误判为卡死。
+	LivenessProbe *v1.Probe `json:"livenessProbe,omitempty"`
+	// StartupProbe 原样透传到容器。它通过之前，Readiness 和 Liveness 都不开始探测，
+	// 用来给模型加载这类慢启动留时间（最长约 periodSeconds × failureThreshold）；
+	// 一直不通过时 kubelet 也会重启容器，同样计入 MaxRestarts。
+	StartupProbe *v1.Probe `json:"startupProbe,omitempty"`
 }
 
 // InferenceJobStatus defines the observed state of InferenceJob.

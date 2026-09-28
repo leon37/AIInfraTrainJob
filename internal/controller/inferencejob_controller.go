@@ -65,6 +65,7 @@ func (r *InferenceJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	podObjectKey := client.ObjectKey{Namespace: inferenceJob.Namespace, Name: inferenceJob.Name}
 	var needUpdate bool
 
 	switch inferenceJob.Status.Phase {
@@ -88,11 +89,70 @@ func (r *InferenceJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				break
 			}
 		}
-	case batchv1.InferenceJobPhaseStarting:
-		err = r.ensureWorkerPod(ctx, &inferenceJob)
+	case batchv1.InferenceJobPhaseStarting, batchv1.InferenceJobPhaseRunning, batchv1.InferenceJobPhaseRestarting:
+		var pod v1.Pod
+		var podNotFound bool
+		err = r.Get(ctx, podObjectKey, &pod)
 		if err != nil {
-			return ctrl.Result{}, err
+			if errors.IsNotFound(err) {
+				podNotFound = true
+			} else {
+				return ctrl.Result{}, err
+			}
 		}
+		podStatus := getInferenceJobPodStatusByPod(&pod)
+		if podNotFound {
+			podStatus = getInferenceJobPodStatusByPod(nil)
+		}
+		curPhase := inferenceJob.Status.Phase
+		next := getInferenceJobNextPhase(curPhase, podStatus, pod, inferenceJob.Spec.MaxRestarts)
+		if next != inferenceJob.Status.Phase {
+			inferenceJob.Status.Phase = next
+			needUpdate = true
+		}
+		if podNotFound {
+			err = r.ensureWorkerPod(ctx, &inferenceJob)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		if next == batchv1.InferenceJobPhaseFailing {
+			for _, container := range pod.Status.ContainerStatuses {
+				if container.State.Terminated != nil {
+					inferenceJob.Status.LastFailure = &batchv1.InferencePodLastFailedSummary{
+						Reason:     container.State.Terminated.Reason,
+						Message:    container.State.Terminated.Message,
+						ExitCode:   &container.State.Terminated.ExitCode,
+						ObservedAt: metav1.Now(),
+					}
+				} else if container.LastTerminationState.Terminated != nil {
+					inferenceJob.Status.LastFailure = &batchv1.InferencePodLastFailedSummary{
+						Reason:     container.LastTerminationState.Terminated.Reason,
+						Message:    container.LastTerminationState.Terminated.Message,
+						ExitCode:   &container.LastTerminationState.Terminated.ExitCode,
+						ObservedAt: metav1.Now(),
+					}
+				}
+			}
+		}
+	case batchv1.InferenceJobPhaseFailing:
+		var pod v1.Pod
+		err = r.Get(ctx, podObjectKey, &pod)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				inferenceJob.Status.Phase = batchv1.InferenceJobPhaseFailed
+				needUpdate = true
+			} else {
+				return ctrl.Result{}, err
+			}
+		} else {
+			err = r.Delete(ctx, &pod)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	case batchv1.InferenceJobPhaseFailed:
+		return ctrl.Result{}, nil
 	}
 
 	if needUpdate {
@@ -103,6 +163,54 @@ func (r *InferenceJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func getInferenceJobPodStatusByPod(p *v1.Pod) InferenceJobPodStatus {
+	if p == nil || p.DeletionTimestamp != nil {
+		return InferenceJobPodStatusNotExist
+	}
+	if isPodReady(*p) {
+		return InferenceJobPodStatusReady
+	}
+
+	for _, container := range p.Status.ContainerStatuses {
+		if (container.State.Waiting != nil && container.LastTerminationState.Terminated != nil) || container.State.Terminated != nil {
+			return InferenceJobPodStatusCrash
+		}
+	}
+	return InferenceJobPodStatusNotReady
+}
+
+func getInferenceJobNextPhase(curPhase batchv1.InferenceJobPhase, podStatus InferenceJobPodStatus, pod v1.Pod, maxRestarts int32) batchv1.InferenceJobPhase {
+	podRestartCount := getPodRestartCount(pod)
+	if podRestartCount > maxRestarts {
+		return batchv1.InferenceJobPhaseFailing
+	}
+	switch podStatus {
+	case InferenceJobPodStatusNotReady:
+		return curPhase
+	case InferenceJobPodStatusNotExist:
+		if curPhase == batchv1.InferenceJobPhaseStarting {
+			return batchv1.InferenceJobPhaseStarting
+		}
+		return batchv1.InferenceJobPhaseRestarting
+	case InferenceJobPodStatusReady:
+		return batchv1.InferenceJobPhaseRunning
+	case InferenceJobPodStatusCrash:
+		if podRestartCount >= maxRestarts {
+			return batchv1.InferenceJobPhaseFailing
+		}
+		return batchv1.InferenceJobPhaseRestarting
+	}
+	return curPhase
+}
+
+func getPodRestartCount(pod v1.Pod) int32 {
+	var ret int32
+	for _, container := range pod.Status.ContainerStatuses {
+		ret += container.RestartCount
+	}
+	return ret
 }
 
 func (r *InferenceJobReconciler) ensureWorkerPod(ctx context.Context, inferenceJob *batchv1.InferenceJob) error {
@@ -171,6 +279,8 @@ func buildInferencePod(inferenceJob *batchv1.InferenceJob) *v1.Pod {
 					Env:            inferenceJob.Spec.Env,
 					Resources:      inferenceJob.Spec.Resources,
 					ReadinessProbe: inferenceJob.Spec.ReadinessProbe,
+					LivenessProbe:  inferenceJob.Spec.LivenessProbe,
+					StartupProbe:   inferenceJob.Spec.StartupProbe,
 					VolumeMounts:   volumeMounts,
 				},
 			},
@@ -220,3 +330,12 @@ func (r *InferenceJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("inferencejob").
 		Complete(r)
 }
+
+type InferenceJobPodStatus string
+
+const (
+	InferenceJobPodStatusReady    InferenceJobPodStatus = "Ready"
+	InferenceJobPodStatusNotExist InferenceJobPodStatus = "NotExist"
+	InferenceJobPodStatusCrash    InferenceJobPodStatus = "Crash"
+	InferenceJobPodStatusNotReady InferenceJobPodStatus = "NotReady"
+)
