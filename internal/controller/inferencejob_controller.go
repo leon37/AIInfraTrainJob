@@ -64,8 +64,55 @@ func (r *InferenceJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		return ctrl.Result{}, err
 	}
-
 	podObjectKey := client.ObjectKey{Namespace: inferenceJob.Namespace, Name: inferenceJob.Name}
+
+	// inferenceJob CR正在被删除
+	if inferenceJob.GetDeletionTimestamp() != nil {
+		var pod v1.Pod
+		err = r.Get(ctx, podObjectKey, &pod)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				curFinalizer := inferenceJob.GetFinalizers()
+				newFinalizer := make([]string, 0)
+				for _, v := range curFinalizer {
+					if v == finalizerKey {
+						continue
+					}
+					newFinalizer = append(newFinalizer, v)
+				}
+				inferenceJob.SetFinalizers(newFinalizer)
+				err = r.Update(ctx, &inferenceJob)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{}, nil
+			}
+			return ctrl.Result{}, err
+		}
+		if pod.DeletionTimestamp != nil {
+			return ctrl.Result{}, nil
+		}
+		err = r.Delete(ctx, &pod)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+	finalizerExists := false
+	for _, f := range inferenceJob.GetFinalizers() {
+		if f == finalizerKey {
+			finalizerExists = true
+			break
+		}
+	}
+	if !finalizerExists {
+		inferenceJob.SetFinalizers(append(inferenceJob.GetFinalizers(), finalizerKey))
+		if err = r.Update(ctx, &inferenceJob); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	var needUpdate bool
 
 	switch inferenceJob.Status.Phase {
