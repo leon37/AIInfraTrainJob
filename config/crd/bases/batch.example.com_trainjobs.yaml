@@ -242,7 +242,15 @@ spec:
                     format: date-time
                     type: string
                   preemptedBy:
-                    type: string
+                    properties:
+                      jobName:
+                        type: string
+                      jobType:
+                        type: string
+                    required:
+                    - jobName
+                    - jobType
+                    type: object
                   rank:
                     format: int32
                     type: integer

@@ -42,11 +42,11 @@ type QueueReconciler struct {
 }
 
 type QueuedJob struct {
-	JobName              string                `json:"jobName,omitempty"`
-	JobType              batchv1.QueuedJobType `json:"jobType,omitempty"`
-	ResourceRequirements v1.ResourceList       `json:"resourceRequirements,omitempty"`
-	PriorityClassName    string                `json:"priorityClassName,omitempty"`
-	CreationTimestamp    metav1.Time           `json:"creationTimestamp,omitempty,omitzero"`
+	JobName              string          `json:"jobName,omitempty"`
+	JobType              batchv1.JobType `json:"jobType,omitempty"`
+	ResourceRequirements v1.ResourceList `json:"resourceRequirements,omitempty"`
+	PriorityClassName    string          `json:"priorityClassName,omitempty"`
+	CreationTimestamp    metav1.Time     `json:"creationTimestamp,omitempty,omitzero"`
 }
 
 //1. 取到当前这个 Queue 对象(reconcile 的 key 就是它);读出 Spec.quota 和 Status.used。
@@ -103,7 +103,7 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	var update bool
 	var newUsed []batchv1.QueueUsed
 	for _, usedIns := range queue.Status.Used {
-		if usedIns.JobType == batchv1.QueuedJobTypeTrain {
+		if usedIns.JobType == batchv1.JobTypeTrain {
 			job, ok := trainJobMap[usedIns.JobName]
 			if !ok {
 				update = true
@@ -115,7 +115,7 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			}
 			newUsed = append(newUsed, usedIns)
 		}
-		if usedIns.JobType == batchv1.QueuedJobTypeInference {
+		if usedIns.JobType == batchv1.JobTypeInference {
 			job, ok := inferenceJobMap[usedIns.JobName]
 			if !ok {
 				update = true
@@ -151,7 +151,7 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 			queuedJobs = append(queuedJobs, QueuedJob{
 				JobName:              job.Name,
-				JobType:              batchv1.QueuedJobTypeTrain,
+				JobType:              batchv1.JobTypeTrain,
 				PriorityClassName:    job.Spec.PriorityClassName,
 				ResourceRequirements: totalNeeded,
 				CreationTimestamp:    job.CreationTimestamp,
@@ -162,7 +162,7 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		if job.Status.Phase == batchv1.InferenceJobPhaseQueued {
 			queuedJobs = append(queuedJobs, QueuedJob{
 				JobName:              job.Name,
-				JobType:              batchv1.QueuedJobTypeInference,
+				JobType:              batchv1.JobTypeInference,
 				PriorityClassName:    job.Spec.PriorityClassName,
 				ResourceRequirements: job.Spec.Resources.Requests,
 				CreationTimestamp:    job.CreationTimestamp,

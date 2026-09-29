@@ -64,13 +64,13 @@ type TrainJobCheckpointSpec struct {
 	PVCName   string `json:"pvcName,omitempty"`
 }
 type FailureSummary struct {
-	Attempt     int32       `json:"attempt"`
-	Rank        int32       `json:"rank"`
-	Reason      string      `json:"reason,omitempty"`
-	Message     string      `json:"message,omitempty"`
-	ExitCode    *int32      `json:"exitCode,omitempty"`
-	ObservedAt  metav1.Time `json:"observedAt,omitempty"`
-	PreemptedBy string      `json:"preemptedBy,omitempty"`
+	Attempt     int32            `json:"attempt"`
+	Rank        int32            `json:"rank"`
+	Reason      string           `json:"reason,omitempty"`
+	Message     string           `json:"message,omitempty"`
+	ExitCode    *int32           `json:"exitCode,omitempty"`
+	ObservedAt  metav1.Time      `json:"observedAt,omitempty"`
+	PreemptedBy *PreemptedByInfo `json:"preemptedBy,omitempty"`
 }
 
 // TrainJobStatus defines the observed state of TrainJob.

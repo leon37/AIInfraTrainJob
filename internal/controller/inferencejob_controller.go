@@ -130,7 +130,7 @@ func (r *InferenceJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, err
 		}
 		for _, used := range queue.Status.Used {
-			if used.JobName == inferenceJob.GetName() && used.JobType == batchv1.QueuedJobTypeInference {
+			if used.JobName == inferenceJob.GetName() && used.JobType == batchv1.JobTypeInference {
 				inferenceJob.Status.Phase = batchv1.InferenceJobPhaseStarting
 				needUpdate = true
 				break
@@ -314,7 +314,7 @@ func buildInferencePod(inferenceJob *batchv1.InferenceJob) *v1.Pod {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: inferenceJob.Namespace,
 			Name:      inferenceJob.Name,
-			Labels:    map[string]string{"jobName": inferenceJob.Name, "jobType": string(batchv1.QueuedJobTypeInference)},
+			Labels:    map[string]string{"jobName": inferenceJob.Name, "jobType": string(batchv1.JobTypeInference)},
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{

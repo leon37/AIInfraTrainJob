@@ -90,7 +90,7 @@ func (r *TrainJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 		for _, used := range queue.Status.Used {
-			if used.JobName == trainJob.GetName() && used.JobType == batchv1.QueuedJobTypeTrain {
+			if used.JobName == trainJob.GetName() && used.JobType == batchv1.JobTypeTrain {
 				trainJob.Status.Phase = batchv1.TrainJobPhaseStarting
 				needUpdate = true
 				break
@@ -134,26 +134,50 @@ func (r *TrainJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 		preemptedBy := podGroup.Status.PreemptedBy
-		var preemptingTrainJob batchv1.TrainJob
-		requeue := false
-		err = r.Get(ctx, types.NamespacedName{Namespace: trainJob.Namespace, Name: preemptedBy}, &preemptingTrainJob)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				requeue = true
-			} else {
-				return ctrl.Result{}, err
-			}
-		}
-		if preemptingTrainJob.Status.Phase == batchv1.TrainJobPhaseRunning || preemptingTrainJob.Status.Phase == batchv1.TrainJobPhaseFailed {
-			requeue = true
-		}
-		if requeue {
-			err = r.deletePodGroup(ctx, &trainJob)
+		if preemptedBy.JobType == batchv1.JobTypeInference {
+			var preemptingInferenceJob batchv1.InferenceJob
+			requeue := false
+			err = r.Get(ctx, types.NamespacedName{Namespace: trainJob.Namespace, Name: preemptedBy.JobName}, &preemptingInferenceJob)
 			if err != nil {
-				return ctrl.Result{}, err
+				if errors.IsNotFound(err) {
+					requeue = true
+				} else {
+					return ctrl.Result{}, err
+				}
 			}
-			trainJob.Status.Phase = batchv1.TrainJobPhaseQueued
-			needUpdate = true
+			if preemptingInferenceJob.Status.Phase == batchv1.InferenceJobPhaseFailed {
+				requeue = true
+			}
+			if requeue {
+				err = r.deletePodGroup(ctx, &trainJob)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+				trainJob.Status.Phase = batchv1.TrainJobPhaseQueued
+				needUpdate = true
+			}
+		} else if preemptedBy.JobType == batchv1.JobTypeTrain {
+			var preemptingTrainJob batchv1.TrainJob
+			requeue := false
+			err = r.Get(ctx, types.NamespacedName{Namespace: trainJob.Namespace, Name: preemptedBy.JobName}, &preemptingTrainJob)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					requeue = true
+				} else {
+					return ctrl.Result{}, err
+				}
+			}
+			if preemptingTrainJob.Status.Phase == batchv1.TrainJobPhaseRunning || preemptingTrainJob.Status.Phase == batchv1.TrainJobPhaseFailed {
+				requeue = true
+			}
+			if requeue {
+				err = r.deletePodGroup(ctx, &trainJob)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+				trainJob.Status.Phase = batchv1.TrainJobPhaseQueued
+				needUpdate = true
+			}
 		}
 	}
 
@@ -180,10 +204,10 @@ func (r *TrainJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &batchv1.PodGroup{}, preemptedByKey, func(rawObj client.Object) []string {
 		podGroup := rawObj.(*batchv1.PodGroup)
-		if podGroup.Status.PreemptedBy == "" {
+		if podGroup.Status.PreemptedBy == nil {
 			return nil
 		}
-		return []string{podGroup.Status.PreemptedBy}
+		return []string{podGroup.Status.PreemptedBy.JobName}
 	}); err != nil {
 		return err
 	}
@@ -238,18 +262,20 @@ func masterServiceName(trainJob *batchv1.TrainJob) string {
 
 func masterServiceSelector(trainJob *batchv1.TrainJob) map[string]string {
 	return map[string]string{
-		"rank":          "0",
-		"attempt":       strconv.Itoa(int(trainJob.Status.Attempt)),
-		"trainjob-name": trainJob.Name,
+		"rank":    "0",
+		"attempt": strconv.Itoa(int(trainJob.Status.Attempt)),
+		"jobName": trainJob.Name,
+		"jobType": string(batchv1.JobTypeTrain),
 	}
 }
 
 func workerPodLabels(trainJob *batchv1.TrainJob, rank int32) map[string]string {
 	return map[string]string{
-		"rank":          strconv.Itoa(int(rank)),
-		"trainjob-name": trainJob.Name,
-		"attempt":       strconv.Itoa(int(trainJob.Status.Attempt)),
-		"pod-group":     workerPodGroupName(trainJob),
+		"rank":      strconv.Itoa(int(rank)),
+		"jobName":   trainJob.Name,
+		"jobType":   string(batchv1.JobTypeTrain),
+		"attempt":   strconv.Itoa(int(trainJob.Status.Attempt)),
+		"pod-group": workerPodGroupName(trainJob),
 	}
 }
 
@@ -447,7 +473,7 @@ type workerStatusSummary struct {
 func (r *TrainJobReconciler) aggregateWorkerStatus(ctx context.Context, trainJob *batchv1.TrainJob) (*workerStatusSummary, error) {
 	summary := &workerStatusSummary{}
 	var pods v1.PodList
-	err := r.List(ctx, &pods, client.MatchingLabels{"trainjob-name": trainJob.Name, "attempt": strconv.Itoa(int(trainJob.Status.Attempt))})
+	err := r.List(ctx, &pods, client.MatchingLabels{"jobName": trainJob.Name, "jobType": string(batchv1.JobTypeTrain), "attempt": strconv.Itoa(int(trainJob.Status.Attempt))})
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +571,7 @@ func (r *TrainJobReconciler) deletePodGroup(ctx context.Context, trainJob *batch
 
 func (r *TrainJobReconciler) deleteWorkerPodsForAttempt(ctx context.Context, trainJob *batchv1.TrainJob, attempt int32) error {
 	var pods v1.PodList
-	err := r.List(ctx, &pods, client.MatchingLabels{"trainjob-name": trainJob.Name, "attempt": strconv.Itoa(int(attempt))})
+	err := r.List(ctx, &pods, client.MatchingLabels{"jobName": trainJob.Name, "jobType": string(batchv1.JobTypeTrain), "attempt": strconv.Itoa(int(attempt))})
 	if err != nil {
 		return err
 	}
@@ -634,7 +660,7 @@ func (r *TrainJobReconciler) ensureWorkerPodGroup(ctx context.Context, trainJob 
 	}
 
 	if trainJob.Status.Phase == batchv1.TrainJobPhaseRunning {
-		if podGroup.Status.PreemptedBy != "" {
+		if podGroup.Status.PreemptedBy != nil {
 			summary := failureSummaryFromPodGroup(&podGroup)
 			err = r.deleteWorkerPodsForAttempt(ctx, trainJob, trainJob.Status.Attempt)
 			if err != nil {

@@ -54,11 +54,16 @@ type PodGroupStatus struct {
 	// - "Progressing": the resource is being created or updated
 	// - "Degraded": the resource failed to reach or maintain its desired state
 	//
-	Round            int32           `json:"round,omitempty"`
-	Failed           bool            `json:"failed,omitempty"`
-	Reason           string          `json:"reason,omitempty"`
-	PreemptionDetail []NominatedInfo `json:"preemptionDetail,omitempty"`
-	PreemptedBy      string          `json:"preemptedBy,omitempty"`
+	Round            int32            `json:"round,omitempty"`
+	Failed           bool             `json:"failed,omitempty"`
+	Reason           string           `json:"reason,omitempty"`
+	PreemptionDetail []NominatedInfo  `json:"preemptionDetail,omitempty"`
+	PreemptedBy      *PreemptedByInfo `json:"preemptedBy,omitempty"`
+}
+
+type PreemptedByInfo struct {
+	JobName string  `json:"jobName"`
+	JobType JobType `json:"jobType"`
 }
 type NominatedInfo struct {
 	NodeName string `json:"nodeName,omitempty"`

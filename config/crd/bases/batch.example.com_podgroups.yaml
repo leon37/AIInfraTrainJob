@@ -58,7 +58,15 @@ spec:
               failed:
                 type: boolean
               preemptedBy:
-                type: string
+                properties:
+                  jobName:
+                    type: string
+                  jobType:
+                    type: string
+                required:
+                - jobName
+                - jobType
+                type: object
               preemptionDetail:
                 items:
                   properties:
