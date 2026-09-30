@@ -59,6 +59,9 @@ spec:
                       type: string
                     jobType:
                       type: string
+                    requeueCount:
+                      format: int32
+                      type: integer
                     resourceUsed:
                       additionalProperties:
                         anyOf:

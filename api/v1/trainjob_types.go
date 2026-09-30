@@ -99,6 +99,7 @@ type TrainJobStatus struct {
 	RunningWorkers int32              `json:"runningWorkers,omitempty"`
 	ReadyWorkers   int32              `json:"readyWorkers,omitempty"`
 	LastFailure    *FailureSummary    `json:"lastFailure,omitempty"`
+	RequeueCount   int32              `json:"requeueCount,omitempty"`
 }
 
 // +kubebuilder:object:root=true

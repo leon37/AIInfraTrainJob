@@ -47,6 +47,7 @@ type QueuedJob struct {
 	ResourceRequirements v1.ResourceList `json:"resourceRequirements,omitempty"`
 	PriorityClassName    string          `json:"priorityClassName,omitempty"`
 	CreationTimestamp    metav1.Time     `json:"creationTimestamp,omitempty,omitzero"`
+	RequeueCount         int32           `json:"requeueCount,omitempty"`
 }
 
 //1. 取到当前这个 Queue 对象(reconcile 的 key 就是它);读出 Spec.quota 和 Status.used。
@@ -113,6 +114,10 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				update = true
 				continue
 			}
+			if usedIns.RequeueCount < job.Status.RequeueCount {
+				update = true
+				continue
+			}
 			newUsed = append(newUsed, usedIns)
 		}
 		if usedIns.JobType == batchv1.JobTypeInference {
@@ -155,6 +160,7 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				PriorityClassName:    job.Spec.PriorityClassName,
 				ResourceRequirements: totalNeeded,
 				CreationTimestamp:    job.CreationTimestamp,
+				RequeueCount:         job.Status.RequeueCount,
 			})
 		}
 	}
@@ -213,6 +219,7 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 					JobName:      curJob.JobName,
 					JobType:      curJob.JobType,
 					ResourceUsed: resourcesNeeded,
+					RequeueCount: curJob.RequeueCount,
 				})
 				update = true
 			}

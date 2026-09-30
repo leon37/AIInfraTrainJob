@@ -38,6 +38,7 @@ type QueueUsed struct {
 	JobName      string          `json:"jobName,omitempty"`
 	JobType      JobType         `json:"jobType,omitempty"`
 	ResourceUsed v2.ResourceList `json:"resourceUsed,omitempty"`
+	RequeueCount int32           `json:"requeueCount,omitempty"`
 }
 
 // +kubebuilder:object:root=true

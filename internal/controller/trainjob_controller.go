@@ -90,7 +90,7 @@ func (r *TrainJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 		for _, used := range queue.Status.Used {
-			if used.JobName == trainJob.GetName() && used.JobType == batchv1.JobTypeTrain {
+			if used.JobName == trainJob.GetName() && used.JobType == batchv1.JobTypeTrain && used.RequeueCount == trainJob.Status.RequeueCount {
 				trainJob.Status.Phase = batchv1.TrainJobPhaseStarting
 				needUpdate = true
 				break
@@ -128,56 +128,19 @@ func (r *TrainJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		changed := applyWorkerStatus(&trainJob, summary)
 		needUpdate = changed
 	case batchv1.TrainJobPhasePreempted:
-		var podGroup batchv1.PodGroup
-		err = r.Get(ctx, types.NamespacedName{Namespace: trainJob.Namespace, Name: workerPodGroupName(&trainJob)}, &podGroup)
+		requeue, err := r.shouldVictimTrainJobRequeue(ctx, trainJob)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		preemptedBy := podGroup.Status.PreemptedBy
-		if preemptedBy.JobType == batchv1.JobTypeInference {
-			var preemptingInferenceJob batchv1.InferenceJob
-			requeue := false
-			err = r.Get(ctx, types.NamespacedName{Namespace: trainJob.Namespace, Name: preemptedBy.JobName}, &preemptingInferenceJob)
-			if err != nil {
-				if errors.IsNotFound(err) {
-					requeue = true
-				} else {
-					return ctrl.Result{}, err
-				}
+
+		if requeue {
+			err = r.deletePodGroup(ctx, &trainJob)
+			if err != nil && !errors.IsNotFound(err) {
+				return ctrl.Result{}, err
 			}
-			if preemptingInferenceJob.Status.Phase == batchv1.InferenceJobPhaseFailed {
-				requeue = true
-			}
-			if requeue {
-				err = r.deletePodGroup(ctx, &trainJob)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-				trainJob.Status.Phase = batchv1.TrainJobPhaseQueued
-				needUpdate = true
-			}
-		} else if preemptedBy.JobType == batchv1.JobTypeTrain {
-			var preemptingTrainJob batchv1.TrainJob
-			requeue := false
-			err = r.Get(ctx, types.NamespacedName{Namespace: trainJob.Namespace, Name: preemptedBy.JobName}, &preemptingTrainJob)
-			if err != nil {
-				if errors.IsNotFound(err) {
-					requeue = true
-				} else {
-					return ctrl.Result{}, err
-				}
-			}
-			if preemptingTrainJob.Status.Phase == batchv1.TrainJobPhaseRunning || preemptingTrainJob.Status.Phase == batchv1.TrainJobPhaseFailed {
-				requeue = true
-			}
-			if requeue {
-				err = r.deletePodGroup(ctx, &trainJob)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-				trainJob.Status.Phase = batchv1.TrainJobPhaseQueued
-				needUpdate = true
-			}
+			trainJob.Status.Phase = batchv1.TrainJobPhaseQueued
+			trainJob.Status.RequeueCount++
+			needUpdate = true
 		}
 	}
 
@@ -191,6 +154,45 @@ func (r *TrainJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
+func (r *TrainJobReconciler) shouldVictimTrainJobRequeue(ctx context.Context, victim batchv1.TrainJob) (bool, error) {
+	var podGroup batchv1.PodGroup
+	err := r.Get(ctx, types.NamespacedName{Namespace: victim.Namespace, Name: workerPodGroupName(&victim)}, &podGroup)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	preemptedBy := podGroup.Status.PreemptedBy
+	if preemptedBy.JobType == batchv1.JobTypeInference {
+		var preemptingInferenceJob batchv1.InferenceJob
+		err = r.Get(ctx, types.NamespacedName{Namespace: victim.Namespace, Name: preemptedBy.JobName}, &preemptingInferenceJob)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		if preemptingInferenceJob.Status.Phase == batchv1.InferenceJobPhaseFailed {
+			return true, nil
+		}
+	} else if preemptedBy.JobType == batchv1.JobTypeTrain {
+		var preemptingTrainJob batchv1.TrainJob
+		err = r.Get(ctx, types.NamespacedName{Namespace: victim.Namespace, Name: preemptedBy.JobName}, &preemptingTrainJob)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+
+		if preemptingTrainJob.Status.Phase == batchv1.TrainJobPhaseRunning || preemptingTrainJob.Status.Phase == batchv1.TrainJobPhaseFailed {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrainJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &batchv1.TrainJob{}, queueNameKey, func(rawObj client.Object) []string {
@@ -202,12 +204,21 @@ func (r *TrainJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}); err != nil {
 		return err
 	}
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &batchv1.PodGroup{}, preemptedByKey, func(rawObj client.Object) []string {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &batchv1.PodGroup{}, preemptedByJobNameKey, func(rawObj client.Object) []string {
 		podGroup := rawObj.(*batchv1.PodGroup)
 		if podGroup.Status.PreemptedBy == nil {
 			return nil
 		}
 		return []string{podGroup.Status.PreemptedBy.JobName}
+	}); err != nil {
+		return err
+	}
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &batchv1.PodGroup{}, preemptedByJobTypeKey, func(rawObj client.Object) []string {
+		podGroup := rawObj.(*batchv1.PodGroup)
+		if podGroup.Status.PreemptedBy == nil {
+			return nil
+		}
+		return []string{string(podGroup.Status.PreemptedBy.JobType)}
 	}); err != nil {
 		return err
 	}
@@ -237,7 +248,26 @@ func (r *TrainJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		req := make([]ctrl.Request, 0)
 
 		var podGroups batchv1.PodGroupList
-		if err := r.List(ctx, &podGroups, client.MatchingFields{preemptedByKey: object.GetName()}); err != nil {
+		if err := r.List(ctx, &podGroups, client.MatchingFields{preemptedByJobNameKey: object.GetName(), preemptedByJobTypeKey: string(batchv1.JobTypeTrain)}); err != nil {
+			return []reconcile.Request{}
+		}
+		for _, podGroup := range podGroups.Items {
+			controller := metav1.GetControllerOf(&podGroup)
+			if controller == nil {
+				continue
+			}
+			req = append(req, ctrl.Request{NamespacedName: types.NamespacedName{
+				Name:      controller.Name,
+				Namespace: podGroup.Namespace,
+			}})
+		}
+
+		return req
+	})).Watches(&batchv1.InferenceJob{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
+		req := make([]ctrl.Request, 0)
+
+		var podGroups batchv1.PodGroupList
+		if err := r.List(ctx, &podGroups, client.MatchingFields{preemptedByJobNameKey: object.GetName(), preemptedByJobTypeKey: string(batchv1.JobTypeInference)}); err != nil {
 			return []reconcile.Request{}
 		}
 		for _, podGroup := range podGroups.Items {

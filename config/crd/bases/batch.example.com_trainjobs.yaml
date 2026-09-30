@@ -265,6 +265,9 @@ spec:
               readyWorkers:
                 format: int32
                 type: integer
+              requeueCount:
+                format: int32
+                type: integer
               runningWorkers:
                 format: int32
                 type: integer
