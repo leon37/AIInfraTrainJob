@@ -1,0 +1,98 @@
+# 阶段 7 第 2 步:在第 1 步(只设 NCCL_HOSTID)的基础上加 hostIPC。
+# TrainJob 设不了 hostIPC,所以手写两个裸 Pod + 一个 Service,
+# RANK / WORLD_SIZE / LOCAL_RANK / MASTER_ADDR / MASTER_PORT 照控制器注入的方式自己写。
+#
+# ⚠️ 别给这两个 Pod 挂 /dev/shm 的卷:hostIPC 时容器里的 /dev/shm 就是宿主机那个,再挂一层又变回各自独立的。
+# 跑完打出 exit code 再 sleep 10 分钟:留时间 exec 进去核 /dev/shm、取日志。用完 kubectl delete -f 本文件。
+apiVersion: v1
+kind: Service
+metadata:
+  name: m4-hostid-step2-master
+  namespace: default
+spec:
+  selector:
+    app: m4-hostid-step2
+    rank: "0"
+  ports:
+    - port: 29500
+      targetPort: 29500
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: m4-hostid-step2-rank-0
+  namespace: default
+  labels:
+    app: m4-hostid-step2
+    rank: "0"
+spec:
+  hostIPC: true
+  restartPolicy: Never
+  containers:
+    - name: worker
+      image: aiinfra-ddp:cu128
+      env:
+        - name: NCCL_HOSTID
+          value: same-host
+        - name: RANK
+          value: "0"
+        - name: WORLD_SIZE
+          value: "2"
+        - name: LOCAL_RANK
+          value: "0"
+        - name: MASTER_ADDR
+          value: m4-hostid-step2-master.default.svc
+        - name: MASTER_PORT
+          value: "29500"
+      command:
+        - sh
+        - -c
+        - |
+          PG_TIMEOUT=120 NCCL_DEBUG=INFO python /app/experiments/06_all_reduce_payload.py --steps 20 --numel 10000000
+          echo "exit code: $?"
+          sleep 600
+      resources:
+        requests:
+          nvidia.com/gpu: "1"
+        limits:
+          nvidia.com/gpu: "1"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: m4-hostid-step2-rank-1
+  namespace: default
+  labels:
+    app: m4-hostid-step2
+    rank: "1"
+spec:
+  hostIPC: true
+  restartPolicy: Never
+  containers:
+    - name: worker
+      image: aiinfra-ddp:cu128
+      env:
+        - name: NCCL_HOSTID
+          value: same-host
+        - name: RANK
+          value: "1"
+        - name: WORLD_SIZE
+          value: "2"
+        - name: LOCAL_RANK
+          value: "0"
+        - name: MASTER_ADDR
+          value: m4-hostid-step2-master.default.svc
+        - name: MASTER_PORT
+          value: "29500"
+      command:
+        - sh
+        - -c
+        - |
+          PG_TIMEOUT=120 NCCL_DEBUG=INFO python /app/experiments/06_all_reduce_payload.py --steps 20 --numel 10000000
+          echo "exit code: $?"
+          sleep 600
+      resources:
+        requests:
+          nvidia.com/gpu: "1"
+        limits:
+          nvidia.com/gpu: "1"

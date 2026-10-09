@@ -1,0 +1,25 @@
+apiVersion: batch.example.com/v1
+kind: TrainJob
+metadata:
+  name: train-low-gpu
+  namespace: default
+spec:
+  queueName: team-gpu
+  worldSize: 2
+  retryLimit: 0
+  schedulerName: my-custom-scheduler
+  priorityClassName: low-priority
+  scheduleTimeoutSeconds: 300
+  image: aiinfra-ddp:cu128
+  masterPort: 29500
+  command:
+    - sh
+    - -c
+    - |
+      PG_TIMEOUT=120 NCCL_DEBUG=INFO python /app/experiments/06_all_reduce_payload.py \
+        --steps 300000 --numel 10000000
+  resources:
+    requests:
+      nvidia.com/gpu: "1"
+    limits:
+      nvidia.com/gpu: "1"

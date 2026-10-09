@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: single-pod-a-default
+  namespace: default
+spec:
+  containers:
+    - name: single-pod-a-default
+      image: aiinfra-ddp:cu128
+      command:
+        - sh
+        - -c
+        - |
+          PG_TIMEOUT=120 NCCL_DEBUG=INFO \
+          env -u RANK -u WORLD_SIZE -u LOCAL_RANK -u MASTER_ADDR -u MASTER_PORT \
+            torchrun --nnodes=1 --nproc_per_node=2 \
+              --master_addr=127.0.0.1 --master_port=29501 \
+              /app/experiments/06_all_reduce_payload.py --steps 25000 --numel 10000000
+      resources:
+        requests:
+          nvidia.com/gpu: "2"
+        limits:
+          nvidia.com/gpu: "2"
+      volumeMounts:
+        - mountPath: /dev/shm
+          name: dshm
+  volumes:
+    - name: dshm
+      emptyDir:
+        medium: "Memory"
+        sizeLimit: "1Gi"
+  restartPolicy: "Never"
+  

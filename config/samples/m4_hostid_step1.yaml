@@ -1,0 +1,26 @@
+apiVersion: batch.example.com/v1
+kind: TrainJob
+metadata:
+  name: m4-hostid-step1
+  namespace: default
+spec:
+  queueName: team-gpu
+  worldSize: 2
+  retryLimit: 0
+  image: aiinfra-ddp:cu128
+  masterPort: 29500
+  # 跑完打出 exit code,再 sleep 10 分钟把 Pod 钉住:TrainJob 只要有 Pod 失败,控制器同一轮就删掉整批 Pod,
+  # 不钉住的话失败分支的日志拿不到(M3 B6 误判 ①)。存完日志手动 kubectl delete trainjob m4-hostid-step1。
+  command:
+    - sh
+    - -c
+    - |
+      NCCL_HOSTID=same-host PG_TIMEOUT=120 NCCL_DEBUG=INFO python /app/experiments/06_all_reduce_payload.py \
+        --steps 20 --numel 10000000
+      echo "exit code: $?"
+      sleep 600
+  resources:
+    requests:
+      nvidia.com/gpu: "1"
+    limits:
+      nvidia.com/gpu: "1"
